@@ -1,4 +1,4 @@
-module changeme
+module github.com/younes-alkashmi/todo
 
 go 1.26.0
 
