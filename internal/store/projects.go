@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	// "errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,5 +106,3 @@ func (r *ProjectRepo) Delete(ctx context.Context, id string) (int, error) {
 	}
 	return int(tasksAffected), nil
 }
-
-var _ = sql.ErrNoRows // keep import if unused in your build; delete when real

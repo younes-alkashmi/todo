@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"log"
 	"time"
 
+	"github.com/younes-alkashmi/todo/internal/auth"
 	"github.com/younes-alkashmi/todo/internal/domain"
 	"github.com/younes-alkashmi/todo/internal/service"
 )
@@ -12,13 +14,25 @@ type App struct {
 	ctx      context.Context
 	tasks    *service.TaskService
 	projects *service.ProjectService
+
+	firebaseAPIKey string
+	apiBaseURL     string // e.g. "http://localhost:8080"
+	sessionToken   string
+	currentUID     string
 }
 
-func NewApp(tasks *service.TaskService, projects *service.ProjectService) *App {
+func NewApp(
+	tasks *service.TaskService,
+	projects *service.ProjectService,
+	firebaseAPIKey string,
+	apiBaseURL string,
+) *App {
 	return &App{
-		ctx:      context.Background(),
-		tasks:    tasks,
-		projects: projects,
+		ctx:            context.Background(),
+		tasks:          tasks,
+		projects:       projects,
+		firebaseAPIKey: firebaseAPIKey,
+		apiBaseURL:     apiBaseURL,
 	}
 }
 
@@ -77,6 +91,11 @@ type ProjectDTO struct {
 	Version   int    `json:"version"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
+}
+
+type SignInResult struct {
+	UID   string `json:"uid"`
+	Email string `json:"email"`
 }
 
 func toProjectDTO(p *domain.Project) ProjectDTO {
@@ -169,3 +188,35 @@ func (a *App) DeleteProject(id string) (int, error) {
 }
 
 func (a *App) Ping() string { return "pong" }
+
+func (a *App) SignIn(email, password string) (SignInResult, error) {
+	resp, err := auth.SignInEmailPassword(a.ctx, a.firebaseAPIKey, email, password)
+	if err != nil {
+		return SignInResult{}, err
+	}
+
+	// Persist refresh token to OS keyring — this is the M3 secure-storage requirement
+	if err := auth.StoreRefreshToken(resp.LocalID, resp.RefreshToken); err != nil {
+		log.Printf("keyring store failed: %v", err)
+	}
+
+	a.sessionToken = resp.IDToken
+	a.currentUID = resp.LocalID
+	return SignInResult{UID: resp.LocalID, Email: resp.Email}, nil
+}
+
+func (a *App) SignOut() error {
+	if a.currentUID != "" {
+		_ = auth.DeleteRefreshToken(a.currentUID)
+	}
+	a.sessionToken = ""
+	a.currentUID = ""
+	return nil
+}
+
+func (a *App) CurrentUser() *SignInResult {
+	if a.currentUID == "" {
+		return nil
+	}
+	return &SignInResult{UID: a.currentUID}
+}

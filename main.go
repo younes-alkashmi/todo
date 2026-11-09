@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
 	"path/filepath"
 
 	"github.com/adrg/xdg"
@@ -27,8 +28,10 @@ func main() {
 
 	tasks := service.NewTaskService(st, "local")
 	projects := service.NewProjectService(st, "local")
-	appSvc := NewApp(tasks, projects)
-
+	appSvc := NewApp(tasks, projects,
+		os.Getenv("FIREBASE_API_KEY"), // e.g. AIzaSy...
+		"http://localhost:8080",
+	)
 	app := application.New(application.Options{
 		Name:        "todo",
 		Description: "Offline-first todo app",

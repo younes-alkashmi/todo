@@ -353,4 +353,4 @@ window.matchMedia("(max-width: 720px)").addEventListener("change", () => {
 });
 
 // Kick off
-refreshAndRender();
+refreshAndRender(); 
