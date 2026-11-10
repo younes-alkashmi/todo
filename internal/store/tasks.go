@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	// "fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +39,7 @@ func (r *TaskRepo) CreateTask(ctx context.Context, t *domain.Task) (*domain.Task
 	if err := insertTask(ctx, tx, t); err != nil {
 		return nil, err
 	}
+
 	if err := insertOutbox(ctx, tx, t.OwnerUID, "task", t.ID, 0, "create", t); err != nil {
 		return nil, err
 	}
@@ -57,7 +57,6 @@ func (r *TaskRepo) UpdateTask(ctx context.Context, in *domain.Task) (*domain.Tas
 		return nil, err
 	}
 	baseVersion := cur.Version
-
 	now := time.Now().UTC()
 	cur.Title = in.Title
 	cur.Description = in.Description
@@ -281,4 +280,104 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+func (r *TaskRepo) ApplyRemoteChanges(ctx context.Context, changes []map[string]interface{}, nextCursor string) error {
+	tx, err := r.s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, doc := range changes {
+		// Skip if there's a pending local mutation for this entity (conflict protection)
+		id, _ := doc["id"].(string)
+		if id == "" {
+			continue
+		}
+		var pending int
+		_ = tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM outbox WHERE entity_id = ? AND state IN ('pending','conflict')`,
+			id).Scan(&pending)
+		if pending > 0 {
+			continue
+		}
+
+		// Safely extract fields with defaults
+		title, _ := doc["title"].(string)
+		if title == "" {
+			title = "(untitled)" // fallback to satisfy NOT NULL
+		}
+		description, _ := doc["description"].(string)
+
+		var dueDate interface{}
+		if v, ok := doc["dueDate"]; ok && v != nil {
+			dueDate = v
+		}
+
+		var tagsJSON string
+		if tags, ok := doc["tags"].([]interface{}); ok {
+			b, _ := json.Marshal(tags)
+			tagsJSON = string(b)
+		} else {
+			tagsJSON = "[]"
+		}
+
+		completed := 0
+		if v, ok := doc["completed"].(bool); ok && v {
+			completed = 1
+		}
+
+		var version int64
+		switch v := doc["version"].(type) {
+		case int64:
+			version = v
+		case float64:
+			version = int64(v)
+		}
+
+		var createdAt, updatedAt string
+		if v, ok := doc["createdAt"].(string); ok {
+			createdAt = v
+		}
+		if v, ok := doc["updatedAt"].(string); ok {
+			updatedAt = v
+		}
+
+		var projectID, parentID interface{}
+		if v, ok := doc["projectId"]; ok && v != nil {
+			projectID = v
+		}
+		if v, ok := doc["parentId"]; ok && v != nil {
+			parentID = v
+		}
+
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO tasks (id, owner_uid, project_id, parent_id, title, description, due_date, tags_json, completed, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				project_id = excluded.project_id,
+				parent_id = excluded.parent_id,
+				title = excluded.title,
+				description = excluded.description,
+				due_date = excluded.due_date,
+				tags_json = excluded.tags_json,
+				completed = excluded.completed,
+				version = excluded.version,
+				updated_at = excluded.updated_at`,
+			id, "local", projectID, parentID, title, description,
+			dueDate, tagsJSON, completed, version, createdAt, updatedAt)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Persist cursor in the same transaction
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO meta(key, value) VALUES('sync_cursor', ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, nextCursor)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }

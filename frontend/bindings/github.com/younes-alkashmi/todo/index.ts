@@ -9,5 +9,6 @@ export {
 export type {
     CreateTaskIn,
     ProjectDTO,
+    SignInResult,
     TaskDTO
 } from "./models.js";

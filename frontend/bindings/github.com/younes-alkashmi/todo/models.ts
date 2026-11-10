@@ -19,6 +19,11 @@ export interface ProjectDTO {
     "updatedAt": string;
 }
 
+export interface SignInResult {
+    "uid": string;
+    "email": string;
+}
+
 export interface TaskDTO {
     "id": string;
     "ownerUid": string;

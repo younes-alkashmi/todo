@@ -1,15 +1,14 @@
 package api
 
 import (
+	"cloud.google.com/go/firestore"
 	"context"
 	"fmt"
-	"time"
-
-	"cloud.google.com/go/firestore"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"time"
 )
 
 type PushMutation struct {
@@ -74,7 +73,7 @@ func applyMutation(ctx context.Context, fs *firestore.Client, uid string, m Push
 		}
 
 		// 3. Apply
-		payload := m.Payload
+		payload := normalizePayload(m.Payload)
 		payload["version"] = int64(m.BaseVersion + 1)
 		payload["updatedAt"] = time.Now().UTC().Format(time.RFC3339Nano)
 		if err := tx.Set(taskRef, payload); err != nil {
@@ -130,4 +129,41 @@ func Pull(c *gin.Context, fs *firestore.Client) {
 		}
 	}
 	c.JSON(200, gin.H{"changes": changes, "nextCursor": lastVersion})
+}
+
+func normalizePayload(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		switch k {
+		case "ID":
+			out["id"] = v
+		case "OwnerUID":
+			out["ownerUid"] = v
+		case "ProjectID":
+			out["projectId"] = v
+		case "ParentID":
+			out["parentId"] = v
+		case "Title":
+			out["title"] = v
+		case "Description":
+			out["description"] = v
+		case "DueDate":
+			out["dueDate"] = v
+		case "Tags":
+			out["tags"] = v
+		case "Completed":
+			out["completed"] = v
+		case "Version":
+			out["version"] = v
+		case "CreatedAt":
+			out["createdAt"] = v
+		case "UpdatedAt":
+			out["updatedAt"] = v
+		case "DeletedAt":
+			out["deletedAt"] = v
+		default:
+			out[k] = v
+		}
+	}
+	return out
 }

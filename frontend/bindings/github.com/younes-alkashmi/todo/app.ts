@@ -17,6 +17,10 @@ export function CreateTask($in: $models.CreateTaskIn): $CancellablePromise<$mode
     return $Call.ByID(4224994508, $in);
 }
 
+export function CurrentUser(): $CancellablePromise<$models.SignInResult | null> {
+    return $Call.ByID(3511555589);
+}
+
 export function DeleteProject(id: string): $CancellablePromise<number> {
     return $Call.ByID(3379369923, id);
 }
@@ -37,8 +41,28 @@ export function Ping(): $CancellablePromise<string> {
     return $Call.ByID(1003072145);
 }
 
+export function RestoreSession(): $CancellablePromise<$models.SignInResult | null> {
+    return $Call.ByID(857499675);
+}
+
+export function SessionInfo(): $CancellablePromise<$models.SignInResult | null> {
+    return $Call.ByID(3895370891);
+}
+
 export function SetTaskCompleted(id: string, done: boolean): $CancellablePromise<$models.TaskDTO> {
     return $Call.ByID(501678495, id, done);
+}
+
+export function SignIn(email: string, password: string): $CancellablePromise<$models.SignInResult> {
+    return $Call.ByID(749131203, email, password);
+}
+
+export function SignOut(): $CancellablePromise<void> {
+    return $Call.ByID(578162832);
+}
+
+export function SyncStatus(): $CancellablePromise<string> {
+    return $Call.ByID(683898348);
 }
 
 export function UpdateTask(id: string, $in: $models.CreateTaskIn): $CancellablePromise<$models.TaskDTO> {

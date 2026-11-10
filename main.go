@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/adrg/xdg"
+	"github.com/joho/godotenv"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/younes-alkashmi/todo/internal/service"
@@ -17,6 +18,7 @@ import (
 var assets embed.FS
 
 func main() {
+	_ = godotenv.Load()
 	// DB lives at ~/.local/share/todo/todo.db on Linux (XDG spec).
 	dbPath := filepath.Join(xdg.DataHome, "todo", "todo.db")
 
@@ -28,10 +30,7 @@ func main() {
 
 	tasks := service.NewTaskService(st, "local")
 	projects := service.NewProjectService(st, "local")
-	appSvc := NewApp(tasks, projects,
-		os.Getenv("FIREBASE_API_KEY"), // e.g. AIzaSy...
-		"http://localhost:8080",
-	)
+	appSvc := NewApp(tasks, projects, st, os.Getenv("FIREBASE_API_KEY"), "http://localhost:8080")
 	app := application.New(application.Options{
 		Name:        "todo",
 		Description: "Offline-first todo app",

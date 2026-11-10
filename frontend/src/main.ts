@@ -1,6 +1,9 @@
 import "./style.css";
 import { App } from "../bindings/github.com/younes-alkashmi/todo";
+import "@wailsio/runtime";
 
+type ProjectDTO = any;
+type TaskDTO = any;
 type State = {
   projects: ProjectDTO[];
   tasks: TaskDTO[];
@@ -16,6 +19,8 @@ type State = {
     dueDate: string;
     tags: string;
   } | null;
+  user: { uid: string } | null;
+  skipAuth: boolean;
 };
 
 const state: State = {
@@ -27,6 +32,8 @@ const state: State = {
   flash: null,
   view: "list",
   draft: null,
+  user: null,
+  skipAuth: false,
 };
 
 // --- helpers ---
@@ -75,15 +82,68 @@ async function refresh() {
   state.tasks = await App.ListTasks(state.scopeProjectId);
 }
 
-// --- render ---
 function render() {
   const appEl = document.getElementById("app");
   if (appEl) appEl.setAttribute("data-view", state.view);
+
+  const signinEl = document.getElementById("signin") as HTMLElement;
+  if (!state.user && !state.skipAuth) {
+    signinEl.hidden = false;
+    renderSignIn(signinEl);
+    return;
+  }
+  signinEl.hidden = true;
 
   renderSidebar();
   renderList();
   renderDetails();
   renderFlash();
+}
+
+function renderSignIn(root: HTMLElement) {
+  if (root.dataset.rendered) return;   // avoid rebuilding on every re-render
+  root.dataset.rendered = "1";
+  root.innerHTML = "";
+
+  const card = el("div", { class: "card" });
+  card.append(el("h2", {}, "Sign in"));
+
+  const email = el("input", { class: "field", type: "email", placeholder: "you@example.com" }) as HTMLInputElement;
+  card.append(field("Email", email));
+
+  const password = el("input", { class: "field", type: "password" }) as HTMLInputElement;
+  card.append(field("Password", password));
+
+  const err = el("p", { class: "error" }); err.hidden = true;
+  card.append(err);
+
+  const btn = el("button", { class: "primary" }, "Sign in");
+  btn.addEventListener("click", async () => {
+    err.hidden = true;
+    btn.setAttribute("disabled", "1");
+    try {
+      const result = await App.SignIn(email.value, password.value);
+      state.user = { uid: result.uid };
+      await refreshAndRender();
+    } catch (e: any) {
+      err.textContent = e.message ?? String(e);
+      err.hidden = false;
+    } finally {
+      btn.removeAttribute("disabled");
+    }
+  });
+  card.append(btn);
+
+  const signout = el("button", { class: "nav" }, "Continue without signing in");
+  signout.style.marginTop = "12px";
+  signout.addEventListener("click", () => {
+    state.skipAuth = true;
+    render();
+    refreshAndRender();
+  });
+  card.append(signout);
+
+  root.append(card);
 }
 
 function renderSidebar() {
@@ -324,9 +384,19 @@ function field(label: string, input: HTMLElement): HTMLElement {
   return el("div", { class: "field-group" }, el("label", {}, label), input);
 }
 
-function renderFlash() {
+async function renderFlash() {
   const el_ = $("#flash");
-  el_.textContent = state.flash ?? "Offline · Local only";
+  if (!el_) return;
+  if (state.flash) {
+    el_.textContent = state.flash;
+    return;
+  }
+  try {
+    const status = await App.SyncStatus();
+    el_.textContent = status;
+  } catch {
+    el_.textContent = "Offline · Local only";
+  }
 }
 
 async function refreshAndRender() {
@@ -342,15 +412,24 @@ function isNarrow(): boolean {
   return window.matchMedia("(max-width: 720px)").matches;
 }
 
-function go(next: State["view"]) {
-  state.view = next;
-  render();
-}
-
 window.matchMedia("(max-width: 720px)").addEventListener("change", () => {
   if (!isNarrow()) state.view = "list";
   render();
 });
 
-// Kick off
-refreshAndRender(); 
+(async () => {
+  try {
+    const restored = await App.RestoreSession();
+    alert("Restored session: " + JSON.stringify(restored));
+    if (restored) state.user = { uid: restored.uid };
+  } catch (e) {
+    console.warn("RestoreSession failed:", e);
+  }
+
+  try {
+    if (state.user) await refresh();
+  } catch (e) {
+    console.warn("initial refresh failed:", e);
+  }
+  render();
+})();

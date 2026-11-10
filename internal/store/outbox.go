@@ -18,6 +18,7 @@ type PendingMutation struct {
 	BaseVersion int
 	Operation   string
 	Payload     json.RawMessage
+	State       string
 	CreatedAt   time.Time
 }
 
@@ -35,11 +36,10 @@ func insertOutbox(ctx context.Context, tx *sql.Tx, account, entityType, entityID
 	return err
 }
 
-// PendingMutations is for tests + debugging now; sync will consume it in M2.
 func (r *TaskRepo) PendingMutations(ctx context.Context) ([]PendingMutation, error) {
 	rows, err := r.s.DB.QueryContext(ctx,
-		`SELECT mutation_id, account, entity_type, entity_id, base_version, operation, payload_json, created_at
-		 FROM outbox WHERE state = 'pending' ORDER BY created_at`)
+		`SELECT mutation_id, account, entity_type, entity_id, base_version, operation, payload_json, state, created_at
+		 FROM outbox WHERE state IN ('pending', 'conflict') ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (r *TaskRepo) PendingMutations(ctx context.Context) ([]PendingMutation, err
 			createdS string
 		)
 		if err := rows.Scan(&m.MutationID, &m.Account, &m.EntityType, &m.EntityID,
-			&m.BaseVersion, &m.Operation, &payload, &createdS); err != nil {
+			&m.BaseVersion, &m.Operation, &payload, &m.State, &createdS); err != nil {
 			return nil, err
 		}
 		m.Payload = json.RawMessage(payload)
@@ -65,3 +65,23 @@ func (r *TaskRepo) PendingMutations(ctx context.Context) ([]PendingMutation, err
 }
 
 func newMutationID() string { return uuid.NewString() }
+
+func (r *TaskRepo) MarkMutationSent(ctx context.Context, mutationID string) error {
+	_, err := r.s.DB.ExecContext(ctx,
+		`UPDATE outbox SET state = 'sent' WHERE mutation_id = ?`, mutationID)
+	return err
+}
+
+func (r *TaskRepo) MarkConflict(ctx context.Context, mutationID string, serverPayload map[string]interface{}) error {
+	payload, _ := json.Marshal(serverPayload)
+	_, err := r.s.DB.ExecContext(ctx,
+		`UPDATE outbox SET state = 'conflict', payload_json = ? WHERE mutation_id = ?`,
+		string(payload), mutationID)
+	return err
+}
+
+func (r *TaskRepo) MarkDenied(ctx context.Context, mutationID, reason string) error {
+	_, err := r.s.DB.ExecContext(ctx,
+		`UPDATE outbox SET state = 'failed' WHERE mutation_id = ?`, mutationID)
+	return err
+}

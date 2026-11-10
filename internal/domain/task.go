@@ -56,19 +56,19 @@ func ParseDate(s string) (Date, error) {
 }
 
 type Task struct {
-	ID          string
-	OwnerUID    string  // "local" in M1; Firebase UID in M2
-	ProjectID   *string // nil => global task
-	ParentID    *string // nil => root task
-	Title       string
-	Description string
-	DueDate     *Date
-	Tags        []string
-	Completed   bool
-	Version     int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	DeletedAt   *time.Time
+	ID          string     `json:"id"`
+	OwnerUID    string     `json:"ownerUid"`
+	ProjectID   *string    `json:"projectId"`
+	ParentID    *string    `json:"parentId"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	DueDate     *Date      `json:"dueDate,omitempty"`
+	Tags        []string   `json:"tags"`
+	Completed   bool       `json:"completed"`
+	Version     int        `json:"version"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+	DeletedAt   *time.Time `json:"deletedAt,omitempty"`
 }
 
 func (t *Task) NormalizeInput() {
@@ -136,4 +136,27 @@ func sameScope(a, b *Task) bool {
 		return ap == nil && bp == nil
 	}
 	return *ap == *bp
+}
+
+func (d Date) MarshalJSON() ([]byte, error) {
+	if d.IsZero() {
+		return []byte("null"), nil
+	}
+	return []byte(`"` + d.String() + `"`), nil
+}
+
+func (d *Date) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	s := strings.Trim(string(b), `"`)
+	if s == "" {
+		return nil
+	}
+	parsed, err := ParseDate(s)
+	if err != nil {
+		return err
+	}
+	*d = parsed
+	return nil
 }
